@@ -25,11 +25,8 @@ class TargetTracer:
 
     def create_table(self):
         cursor = self.conn.cursor()
-        cursor.execute('''CREATE TABLE IF NOT EXISTS targets
-                          (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), description TEXT, date DATE, achieved INT)''')
-        self.conn.commit()
 
-        # Добавляем таблицы для каждой из категорий: учеба, работа, личное
+        # Создаем таблицы для каждой из категорий: учеба, работа, личное
         cursor.execute('''CREATE TABLE IF NOT EXISTS education_targets
                           (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), description TEXT, date DATE, achieved INT)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS work_targets
@@ -37,6 +34,7 @@ class TargetTracer:
         cursor.execute('''CREATE TABLE IF NOT EXISTS personal_targets
                           (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), description TEXT, date DATE, achieved INT)''')
         self.conn.commit()
+
 
     def add_target(self):
         category = self.category_var.get()  # Получаем выбранную категорию
