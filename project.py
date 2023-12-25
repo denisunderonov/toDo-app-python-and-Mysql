@@ -20,21 +20,22 @@ class TargetTracer:
             database="doapp"
         )
 
-        self.create_table()
+        self.create_tables()
         self.create_widgets()
 
-    def create_table(self):
+    def create_tables(self):
         cursor = self.conn.cursor()
 
-        # Создаем таблицы для каждой из категорий: учеба, работа, личное
-        cursor.execute('''CREATE TABLE IF NOT EXISTS education_targets
-                          (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), description TEXT, date DATE, achieved INT)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS work_targets
-                          (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), description TEXT, date DATE, achieved INT)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS personal_targets
-                          (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), description TEXT, date DATE, achieved INT)''')
-        self.conn.commit()
+        # Создаем таблицу категорий
+        cursor.execute('''CREATE TABLE IF NOT EXISTS categories
+                          (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(20) UNIQUE)''')
 
+        # Создаем таблицу целей
+        cursor.execute('''CREATE TABLE IF NOT EXISTS targets
+                          (id INT AUTO_INCREMENT PRIMARY KEY, category_id INT, name VARCHAR(255), description TEXT, date DATE, achieved INT,
+                          FOREIGN KEY (category_id) REFERENCES categories(id))''')
+
+        self.conn.commit()
 
     def add_target(self):
         category = self.category_var.get()  # Получаем выбранную категорию
@@ -49,21 +50,27 @@ class TargetTracer:
 
             cursor = self.conn.cursor()
 
-            # Определяем, в какую таблицу добавлять цель
-            if category == "Учеба":
-                cursor.execute("INSERT INTO education_targets (name, description, date, achieved) VALUES (%s, %s, %s, %s)",
-                               (name, description, date, achieved))
-            elif category == "Работа":
-                cursor.execute("INSERT INTO work_targets (name, description, date, achieved) VALUES (%s, %s, %s, %s)",
-                               (name, description, date, achieved))
-            elif category == "Личное":
-                cursor.execute("INSERT INTO personal_targets (name, description, date, achieved) VALUES (%s, %s, %s, %s)",
-                               (name, description, date, achieved))
+            try:
+                # Пытаемся добавить категорию, если ее нет
+                cursor.execute("INSERT INTO categories (name) VALUES (%s) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
+                               (category,))
+                self.conn.commit()
 
-            self.conn.commit()
-            self.update_targets_list()
+                # Получаем ID категории
+                cursor.execute(
+                    "SELECT id FROM categories WHERE name = %s", (category,))
+                category_id = cursor.fetchone()[0]
 
-    # Остальные методы остаются, но их нужно изменить в соответствии с категориями
+                # Добавляем цель
+                cursor.execute("INSERT INTO targets (category_id, name, description, date, achieved) VALUES (%s, %s, %s, %s, %s)",
+                               (category_id, name, description, date, achieved))
+
+                self.conn.commit()
+                self.update_targets_list()
+
+            except mysql.connector.IntegrityError as e:
+                messagebox.showerror(
+                    "Ошибка", "Ошибка добавления категории: {}".format(str(e)))
 
     def mark_achieved(self):
         selected_target = self.targets_listbox.curselection()
@@ -71,21 +78,17 @@ class TargetTracer:
             target_id = self.targets[selected_target[0]][0]
             cursor = self.conn.cursor()
 
-            category = self.category_var.get()
+            try:
+                # Отмечаем цель как достигнутую
+                cursor.execute(
+                    "UPDATE targets SET achieved = 1 WHERE id = %s", (target_id,))
 
-            # Определяем, в какой таблице обновлять цель
-            if category == "Учеба":
-                cursor.execute(
-                    "UPDATE education_targets SET achieved = 1 WHERE id = %s", (target_id,))
-            elif category == "Работа":
-                cursor.execute(
-                    "UPDATE work_targets SET achieved = 1 WHERE id = %s", (target_id,))
-            elif category == "Личное":
-                cursor.execute(
-                    "UPDATE personal_targets SET achieved = 1 WHERE id = %s", (target_id,))
+                self.conn.commit()
+                self.update_targets_list()
 
-            self.conn.commit()
-            self.update_targets_list()
+            except mysql.connector.Error as e:
+                messagebox.showerror(
+                    "Ошибка", "Ошибка при отметке цели: {}".format(str(e)))
 
     def delete_target(self):
         selected_target = self.targets_listbox.curselection()
@@ -93,44 +96,37 @@ class TargetTracer:
             target_id = self.targets[selected_target[0]][0]
             cursor = self.conn.cursor()
 
-            category = self.category_var.get()
+            try:
+                # Удаляем цель
+                cursor.execute(
+                    "DELETE FROM targets WHERE id = %s", (target_id,))
 
-            # Определяем, из какой таблицы удалять цель
-            if category == "Учеба":
-                cursor.execute(
-                    "DELETE FROM education_targets WHERE id = %s", (target_id,))
-            elif category == "Работа":
-                cursor.execute(
-                    "DELETE FROM work_targets WHERE id = %s", (target_id,))
-            elif category == "Личное":
-                cursor.execute(
-                    "DELETE FROM personal_targets WHERE id = %s", (target_id,))
+                self.conn.commit()
+                self.update_targets_list()
 
-            self.conn.commit()
-            self.update_targets_list()
+            except mysql.connector.Error as e:
+                messagebox.showerror(
+                    "Ошибка", "Ошибка при удалении цели: {}".format(str(e)))
 
     def show_targets_list(self):
         self.targets_listbox.delete(0, END)
         cursor = self.conn.cursor()
 
-        category = self.category_var.get()
+        try:
+            # Загружаем цели из общей таблицы
+            cursor.execute('''SELECT t.id, c.name, t.name, t.description, t.date, t.achieved
+                              FROM targets t
+                              JOIN categories c ON t.category_id = c.id''')
 
-        # Определяем, из какой таблицы загружать цели
-        if category == "Учеба":
-            cursor.execute(
-                "SELECT id, name, description, date, achieved FROM education_targets")
-        elif category == "Работа":
-            cursor.execute(
-                "SELECT id, name, description, date, achieved FROM work_targets")
-        elif category == "Личное":
-            cursor.execute(
-                "SELECT id, name, description, date, achieved FROM personal_targets")
+            self.targets = cursor.fetchall()
+            for target in self.targets:
+                status = "Достигнуто" if target[5] else "Не достигнуто"
+                self.targets_listbox.insert(
+                    END, f"{target[1]} - {target[2]} ({target[3]}) - {status}")
 
-        self.targets = cursor.fetchall()
-        for target in self.targets:
-            status = "Достигнуто" if target[4] else "Не достигнуто"
-            self.targets_listbox.insert(
-                END, f"{target[1]} - {target[2]} ({target[3]}) - {status}")
+        except mysql.connector.Error as e:
+            messagebox.showerror(
+                "Ошибка", "Ошибка при загрузке целей: {}".format(str(e)))
 
     def update_targets_list(self):
         self.show_targets_list()
@@ -164,10 +160,6 @@ class TargetTracer:
         delete_button = ttk.Button(
             self.root, text="Удалить цель", command=self.delete_target, style="TButton")
         delete_button.pack(pady=5)
-
-        show_list_button = ttk.Button(
-            self.root, text="Показать список целей", command=self.show_targets_list, style="TButton")
-        show_list_button.pack(pady=5)
 
         self.targets_listbox = Listbox(
             self.root, selectmode="SINGLE", width=50, height=10, font=("Arial", 12))
